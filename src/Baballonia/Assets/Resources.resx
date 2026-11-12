@@ -750,6 +750,12 @@
   <data name="Home_Backend_Default" xml:space="preserve">
     <value>Default</value>
   </data>
+  <data name="Home_Capture_Format" xml:space="preserve">
+    <value>Resolution / framerate</value>
+  </data>
+  <data name="Home_Capture_Format_Default" xml:space="preserve">
+    <value>Camera default</value>
+  </data>
   <data name="Home_Eye_Load_Model" xml:space="preserve">
     <value>Load Eye Model</value>
   </data>
