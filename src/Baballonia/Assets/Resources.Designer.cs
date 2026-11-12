@@ -1044,6 +1044,24 @@ namespace Baballonia.Assets {
                 return ResourceManager.GetString("Home_Backend_Default", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Resolution / framerate.
+        /// </summary>
+        public static string Home_Capture_Format {
+            get {
+                return ResourceManager.GetString("Home_Capture_Format", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Camera default.
+        /// </summary>
+        public static string Home_Capture_Format_Default {
+            get {
+                return ResourceManager.GetString("Home_Capture_Format_Default", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to Adjust the brightness.

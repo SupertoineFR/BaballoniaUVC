@@ -179,29 +179,47 @@
                     </Interaction.Behaviors>
                   </AutoCompleteBox>
 
-                  <Grid
-                    Grid.Row="1"
-                    RowDefinitions="Auto,Auto"
-                    IsVisible="{Binding LeftCamera.CaptureMethodVisible}">
+                  <StackPanel Grid.Row="1">
+                    <Grid
+                      RowDefinitions="Auto,Auto"
+                      IsVisible="{Binding LeftCamera.CaptureMethodVisible}">
+
+                        <TextBlock
+                          Grid.Row="0"
+                          TextWrapping="Wrap"
+                          Text="{x:Static assets:Resources.Home_Preferred_Backend}"
+                          >
+                        </TextBlock>
+
+                        <ComboBox
+                        HorizontalAlignment="Stretch"
+                        Margin="0,6"
+                        PlaceholderText="{x:Static assets:Resources.Home_Backend_Select_Placeholder}"
+                        ItemsSource="{Binding LeftCamera.CaptureMethods}"
+                        SelectedItem="{Binding LeftCamera.SelectedCaptureMethod}"
+                        Grid.Row="1"
+                        >
+                        </ComboBox>
+
+                    </Grid>
+
+                    <Grid
+                      RowDefinitions="Auto,Auto"
+                      IsVisible="{Binding LeftCamera.CaptureFormatVisible}">
 
                       <TextBlock
                         Grid.Row="0"
                         TextWrapping="Wrap"
-                        Text="{x:Static assets:Resources.Home_Preferred_Backend}"
-                        >
-                      </TextBlock>
+                        Text="{x:Static assets:Resources.Home_Capture_Format}" />
 
                       <ComboBox
-                      HorizontalAlignment="Stretch"
-                      Margin="0,6"
-                      PlaceholderText="{x:Static assets:Resources.Home_Backend_Select_Placeholder}"
-                      ItemsSource="{Binding LeftCamera.CaptureMethods}"
-                      SelectedItem="{Binding LeftCamera.SelectedCaptureMethod}"
-                      Grid.Row="1"
-                      >
-                      </ComboBox>
-
-                  </Grid>
+                        HorizontalAlignment="Stretch"
+                        Margin="0,6"
+                        ItemsSource="{Binding LeftCamera.CaptureFormats}"
+                        SelectedItem="{Binding LeftCamera.SelectedCaptureFormat}"
+                        Grid.Row="1" />
+                    </Grid>
+                  </StackPanel>
 
                   <TextBlock
                       FontSize="12"
@@ -448,29 +466,47 @@
                     </Interaction.Behaviors>
                   </AutoCompleteBox>
 
-                  <Grid
-                    Grid.Row="1"
-                    RowDefinitions="Auto,Auto"
-                    IsVisible="{Binding RightCamera.CaptureMethodVisible}">
+                  <StackPanel Grid.Row="1">
+                    <Grid
+                      RowDefinitions="Auto,Auto"
+                      IsVisible="{Binding RightCamera.CaptureMethodVisible}">
 
-                    <TextBlock
-                      Grid.Row="0"
-                      TextWrapping="Wrap"
-                      Text="{x:Static assets:Resources.Home_Preferred_Backend}"
-                    >
-                    </TextBlock>
+                      <TextBlock
+                        Grid.Row="0"
+                        TextWrapping="Wrap"
+                        Text="{x:Static assets:Resources.Home_Preferred_Backend}"
+                      >
+                      </TextBlock>
 
-                    <ComboBox
-                      HorizontalAlignment="Stretch"
-                      Margin="0,6"
-                      PlaceholderText="{x:Static assets:Resources.Home_Backend_Select_Placeholder}"
-                      ItemsSource="{Binding RightCamera.CaptureMethods}"
-                      SelectedItem="{Binding RightCamera.SelectedCaptureMethod}"
-                      Grid.Row="1"
-                    >
-                    </ComboBox>
+                      <ComboBox
+                        HorizontalAlignment="Stretch"
+                        Margin="0,6"
+                        PlaceholderText="{x:Static assets:Resources.Home_Backend_Select_Placeholder}"
+                        ItemsSource="{Binding RightCamera.CaptureMethods}"
+                        SelectedItem="{Binding RightCamera.SelectedCaptureMethod}"
+                        Grid.Row="1"
+                      >
+                      </ComboBox>
 
-                  </Grid>
+                    </Grid>
+
+                    <Grid
+                      RowDefinitions="Auto,Auto"
+                      IsVisible="{Binding RightCamera.CaptureFormatVisible}">
+
+                      <TextBlock
+                        Grid.Row="0"
+                        TextWrapping="Wrap"
+                        Text="{x:Static assets:Resources.Home_Capture_Format}" />
+
+                      <ComboBox
+                        HorizontalAlignment="Stretch"
+                        Margin="0,6"
+                        ItemsSource="{Binding RightCamera.CaptureFormats}"
+                        SelectedItem="{Binding RightCamera.SelectedCaptureFormat}"
+                        Grid.Row="1" />
+                    </Grid>
+                  </StackPanel>
 
                   <TextBlock
                       FontSize="12"
@@ -713,29 +749,47 @@
                   </Interaction.Behaviors>
                 </AutoCompleteBox>
 
-                <Grid
-                  Grid.Row="1"
-                  RowDefinitions="Auto,Auto"
-                  IsVisible="{Binding FaceCamera.CaptureMethodVisible}">
+                <StackPanel Grid.Row="1">
+                  <Grid
+                    RowDefinitions="Auto,Auto"
+                    IsVisible="{Binding FaceCamera.CaptureMethodVisible}">
 
-                  <TextBlock
-                    Grid.Row="0"
-                    TextWrapping="Wrap"
-                    Text="{x:Static assets:Resources.Home_Preferred_Backend}"
-                  >
-                  </TextBlock>
+                    <TextBlock
+                      Grid.Row="0"
+                      TextWrapping="Wrap"
+                      Text="{x:Static assets:Resources.Home_Preferred_Backend}"
+                    >
+                    </TextBlock>
 
-                  <ComboBox
-                    HorizontalAlignment="Stretch"
-                    Margin="0,6"
-                    PlaceholderText="{x:Static assets:Resources.Home_Backend_Select_Placeholder}"
-                    ItemsSource="{Binding FaceCamera.CaptureMethods}"
-                    SelectedItem="{Binding FaceCamera.SelectedCaptureMethod}"
-                    Grid.Row="1"
-                  >
-                  </ComboBox>
+                    <ComboBox
+                      HorizontalAlignment="Stretch"
+                      Margin="0,6"
+                      PlaceholderText="{x:Static assets:Resources.Home_Backend_Select_Placeholder}"
+                      ItemsSource="{Binding FaceCamera.CaptureMethods}"
+                      SelectedItem="{Binding FaceCamera.SelectedCaptureMethod}"
+                      Grid.Row="1"
+                    >
+                    </ComboBox>
 
-                </Grid>
+                  </Grid>
+
+                  <Grid
+                    RowDefinitions="Auto,Auto"
+                    IsVisible="{Binding FaceCamera.CaptureFormatVisible}">
+
+                    <TextBlock
+                      Grid.Row="0"
+                      TextWrapping="Wrap"
+                      Text="{x:Static assets:Resources.Home_Capture_Format}" />
+
+                    <ComboBox
+                      HorizontalAlignment="Stretch"
+                      Margin="0,6"
+                      ItemsSource="{Binding FaceCamera.CaptureFormats}"
+                      SelectedItem="{Binding FaceCamera.SelectedCaptureFormat}"
+                      Grid.Row="1" />
+                  </Grid>
+                </StackPanel>
 
                 <TextBlock
                     FontSize="12"

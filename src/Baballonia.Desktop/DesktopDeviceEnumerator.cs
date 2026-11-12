@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Baballonia.Assets;
 using Baballonia.Contracts;
+using Baballonia.SDK;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 
@@ -63,6 +64,11 @@ public sealed class DesktopDeviceEnumerator(ILogger<DesktopDeviceEnumerator> log
             cameraDict.Add($"Error: {ex.Message}", "error");
         }
 
+        // Devices may have been (un)plugged, so previously queried video modes may be stale
+        lock (_formatCache)
+            _formatCache.Clear();
+        Cameras = cameraDict;
+
         Logger.LogDebug("Camera enumeration completed. Found {CameraCount} devices", cameraDict.Count);
         foreach (var camera in cameraDict)
         {
@@ -116,6 +122,68 @@ public sealed class DesktopDeviceEnumerator(ILogger<DesktopDeviceEnumerator> log
         }
         #endif
     }
+
+    /// <inheritdoc />
+    public IReadOnlyList<CaptureFormat> GetSupportedFormats(string cameraName)
+    {
+        if (string.IsNullOrEmpty(cameraName) || !OperatingSystem.IsWindows())
+            return [];
+
+        Cameras ??= UpdateCameras();
+        var deviceId = Cameras.TryGetValue(cameraName, out var mapped) ? mapped : cameraName;
+        if (!int.TryParse(deviceId, out var index))
+            return [];
+
+        try
+        {
+            return GetWindowsDsFormats(index);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning("Unable to query video modes of '{Camera}': {Error}", cameraName, ex.Message);
+            return [];
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private IReadOnlyList<CaptureFormat> GetWindowsDsFormats(int index)
+    {
+        #if WINDOWS
+        var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+        try
+        {
+            if (index < 0 || index >= devices.Length)
+                return [];
+
+            var device = devices[index];
+            lock (_formatCache)
+            {
+                if (device.DevicePath != null && _formatCache.TryGetValue(device.DevicePath, out var cached))
+                    return cached;
+            }
+
+            var formats = DirectShowFormatEnumerator.Enumerate(device, Logger);
+            Logger.LogDebug("Found {Count} video modes for {Camera}", formats.Count, device.Name);
+
+            if (device.DevicePath != null && formats.Count > 0)
+            {
+                lock (_formatCache)
+                    _formatCache[device.DevicePath] = formats;
+            }
+
+            return formats;
+        }
+        finally
+        {
+            foreach (var d in devices)
+                d.Dispose();
+        }
+        #else
+        return [];
+        #endif
+    }
+
+    private readonly Dictionary<string, IReadOnlyList<CaptureFormat>> _formatCache = new();
 
     [SupportedOSPlatform("linux")]
     private void AddLinuxUvcDevices(Dictionary<string, string> cameraDict)

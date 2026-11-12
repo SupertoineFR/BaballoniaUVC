@@ -4,6 +4,7 @@ using Baballonia.Services.Inference.Platforms;
 using Baballonia.Services.Inference.VideoSources;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,6 +18,9 @@ public class SingleCameraSourceFactory
     private readonly IDeviceEnumerator _deviceEnumerator;
     private readonly IPlatformConnector _platformConnector;
 
+    // Video mode requested by the user, keyed by the camera address as shown in the UI (friendly name or raw address)
+    private readonly ConcurrentDictionary<string, CaptureFormat> _requestedFormats = new();
+
     public SingleCameraSourceFactory(ILogger<SingleCameraSourceFactory> logger, ILoggerFactory loggerFactory, IDeviceEnumerator deviceEnumerator, IPlatformConnector platformConnector)
     {
         _logger = logger;
@@ -25,7 +29,23 @@ public class SingleCameraSourceFactory
         _platformConnector = platformConnector;
     }
 
-    public SingleCameraSource? Create(string address, string providerName)
+    /// <summary>
+    /// Sets the video mode to request the next time a capture for <paramref name="address"/> is started.
+    /// Pass null to let the camera use its default mode.
+    /// </summary>
+    public void SetRequestedFormat(string address, CaptureFormat? format)
+    {
+        if (string.IsNullOrEmpty(address)) return;
+        if (format == null)
+            _requestedFormats.TryRemove(address, out _);
+        else
+            _requestedFormats[address] = format;
+    }
+
+    public CaptureFormat? GetRequestedFormat(string address) =>
+        !string.IsNullOrEmpty(address) && _requestedFormats.TryGetValue(address, out var format) ? format : null;
+
+    public SingleCameraSource? Create(string address, string providerName, CaptureFormat? requestedFormat = null)
     {
         ICaptureFactory? provider;
         if (!string.IsNullOrEmpty(providerName))
@@ -44,6 +64,7 @@ public class SingleCameraSourceFactory
         }
 
         var capture = provider.Create(address);
+        capture.RequestedFormat = requestedFormat;
 
         return new SingleCameraSource(_loggerFactory.CreateLogger<SingleCameraSource>(), capture, address);
     }
@@ -67,6 +88,7 @@ public class SingleCameraSourceFactory
     public Task<SingleCameraSource?> CreateStart(string address, string providerName)
     {
         var camera = address;
+        var requestedFormat = GetRequestedFormat(address);
 
         _deviceEnumerator.Cameras ??= _deviceEnumerator.UpdateCameras();
         if (_deviceEnumerator.Cameras.TryGetValue(camera, out var mappedAddress))
@@ -76,7 +98,7 @@ public class SingleCameraSourceFactory
 
         return Task.Run<SingleCameraSource?>(() =>
         {
-            var cameraSource = Create(camera, providerName);
+            var cameraSource = Create(camera, providerName, requestedFormat);
             if (cameraSource == null)
                 return null;
 
