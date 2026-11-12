@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using OpenCvSharp;
+using Baballonia.SDK;
 using Capture = Baballonia.SDK.Capture;
 
 namespace Baballonia.OpenCVCapture;
@@ -62,10 +63,45 @@ public sealed class OpenCvCapture(string source, ILogger<OpenCvCapture> logger) 
         _videoCapture.ConvertRgb = true;
         IsReady = _videoCapture.IsOpened();
 
+        if (IsReady && RequestedFormat is { } format)
+            ApplyRequestedFormat(_videoCapture, format);
+
         CancellationToken token = _updateTaskCts.Token;
         _updateTask = Task.Run(() => VideoCapture_UpdateLoop(_videoCapture, token));
 
         return IsReady;
+    }
+
+    private void ApplyRequestedFormat(VideoCapture capture, CaptureFormat format)
+    {
+        try
+        {
+            // Order matters for the DirectShow backend (verified empirically, other orders silently
+            // fall back to an uncompressed format such as YUY2 at a lower framerate):
+            //  1. FPS first. It is remembered and reused by every later re-negotiation.
+            //  2. Width, then height. The new resolution is negotiated once both are known.
+            //  3. FourCC last. It re-negotiates the media type at the resolution now in use.
+            if (format.Fps > 0)
+                capture.Set(VideoCaptureProperties.Fps, format.Fps);
+
+            capture.Set(VideoCaptureProperties.FrameWidth, format.Width);
+            capture.Set(VideoCaptureProperties.FrameHeight, format.Height);
+
+            if (format.GetFourCc() is { } fourCc)
+                capture.Set(VideoCaptureProperties.FourCC, fourCc);
+
+            var actualFourCc = (int)capture.Get(VideoCaptureProperties.FourCC);
+            var actualFourCcStr = actualFourCc > 0
+                ? new string([(char)(actualFourCc & 0xFF), (char)((actualFourCc >> 8) & 0xFF), (char)((actualFourCc >> 16) & 0xFF), (char)((actualFourCc >> 24) & 0xFF)])
+                : "?";
+            logger.LogInformation(
+                "Requested camera mode {Requested}; camera reports {Width}x{Height} @ {Fps} fps ({FourCC})",
+                format, capture.FrameWidth, capture.FrameHeight, capture.Fps, actualFourCcStr);
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning("Could not apply camera mode {Format}: {Error}", format, e.Message);
+        }
     }
 
     private Task VideoCapture_UpdateLoop(VideoCapture capture, CancellationToken ct)

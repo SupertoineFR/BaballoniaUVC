@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Baballonia.Contracts;
 using Baballonia.Helpers;
+using Baballonia.SDK;
 using Baballonia.Services;
 using Baballonia.Services.events;
 using Baballonia.Services.Inference;
@@ -16,6 +17,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -27,6 +29,19 @@ namespace Baballonia.ViewModels.SplitViewPane;
 
 public partial class HomePageViewModel : ViewModelBase, IDisposable
 {
+    /// <summary>
+    /// An entry of the resolution / framerate dropdown. A null <see cref="Format"/> means "camera default".
+    /// </summary>
+    public sealed record CaptureFormatOption(CaptureFormat? Format, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    /// <summary>
+    /// Persisted resolution / framerate choice, remembered together with the camera it was made for.
+    /// </summary>
+    public sealed record SavedCaptureFormat(string Address, CaptureFormat Format);
+
     // This feels unorthodox but... i kinda like it?
     public partial class CameraControllerModel : ObservableObject
     {
@@ -56,22 +71,34 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
         [ObservableProperty] private bool _isCameraRunning = false;
         [ObservableProperty] private string _selectedCaptureMethod = "";
         [ObservableProperty] private bool _captureMethodVisible = false;
+        [ObservableProperty] private CaptureFormatOption? _selectedCaptureFormat;
+        [ObservableProperty] private bool _captureFormatVisible = false;
         public ObservableCollection<string> Suggestions { get; set; } = [];
         public ObservableCollection<string> CaptureMethods { get; set; } = [];
+        public ObservableCollection<CaptureFormatOption> CaptureFormats { get; set; } = [];
+
+        /// <summary>
+        /// Raised when the user picks a different resolution / framerate, so a running camera can be restarted.
+        /// </summary>
+        public event Action<CameraControllerModel>? CaptureFormatChangedByUser;
 
         private readonly ILocalSettingsService _localSettingsService;
         private readonly IPlatformConnector _platformConnector;
         private readonly IDeviceEnumerator _deviceEnumerator;
+        private readonly SingleCameraSourceFactory _cameraSourceFactory;
+        private bool _isPopulatingCaptureFormats;
+        private string? _captureFormatsAddress;
 
 
         public CameraControllerModel(ILocalSettingsService localSettingsService, IPlatformConnector platformConnector,
-            IDeviceEnumerator deviceEnumerator,
+            IDeviceEnumerator deviceEnumerator, SingleCameraSourceFactory cameraSourceFactory,
             string name, string[] cameras,
             Camera camera)
         {
             _localSettingsService = localSettingsService;
             _platformConnector = platformConnector;
             _deviceEnumerator = deviceEnumerator;
+            _cameraSourceFactory = cameraSourceFactory;
 
             Name = name;
             Camera = camera;
@@ -138,6 +165,118 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
             {
                 SelectedCaptureMethod = "";
             }
+
+            RefreshCaptureFormats();
+        }
+
+        /// <summary>
+        /// Repopulates the resolution / framerate dropdown for the currently entered camera.
+        /// </summary>
+        public void RefreshCaptureFormats(bool force = false)
+        {
+            var address = DisplayAddress ?? "";
+            if (!force && address == _captureFormatsAddress)
+                return;
+            _captureFormatsAddress = address;
+
+            IReadOnlyList<CaptureFormat> formats;
+            try
+            {
+                formats = _deviceEnumerator.GetSupportedFormats(address);
+            }
+            catch
+            {
+                formats = [];
+            }
+
+            _isPopulatingCaptureFormats = true;
+            try
+            {
+                CaptureFormats.Clear();
+                if (formats.Count == 0)
+                {
+                    SelectedCaptureFormat = null;
+                    CaptureFormatVisible = false;
+                    return;
+                }
+
+                var defaultOption = new CaptureFormatOption(null, Assets.Resources.Home_Capture_Format_Default);
+                CaptureFormats.Add(defaultOption);
+                foreach (var format in formats)
+                    CaptureFormats.Add(new CaptureFormatOption(format, format.ToString()));
+
+                // Another camera panel may already have picked a mode for this device (e.g. a shared stereo eye camera)
+                var wanted = _cameraSourceFactory.GetRequestedFormat(address);
+                if (wanted == null)
+                {
+                    var saved = _localSettingsService.ReadSetting<SavedCaptureFormat>("CaptureFormat" + Name);
+                    if (saved != null && saved.Address == address)
+                        wanted = saved.Format;
+                }
+
+                var selected = CaptureFormats.FirstOrDefault(o => o.Format == wanted) ?? defaultOption;
+                SelectedCaptureFormat = selected;
+                if (selected.Format != null)
+                    _cameraSourceFactory.SetRequestedFormat(address, selected.Format);
+
+                CaptureFormatVisible = true;
+            }
+            finally
+            {
+                _isPopulatingCaptureFormats = false;
+            }
+        }
+
+        /// <summary>
+        /// Selects the given mode without treating it as a user change (no restart, no event).
+        /// </summary>
+        public void SyncCaptureFormat(CaptureFormat? format)
+        {
+            var option = CaptureFormats.FirstOrDefault(o => o.Format == format);
+            if (option == null || ReferenceEquals(option, SelectedCaptureFormat))
+                return;
+
+            _isPopulatingCaptureFormats = true;
+            try
+            {
+                SelectedCaptureFormat = option;
+                SaveCaptureFormat(format);
+            }
+            finally
+            {
+                _isPopulatingCaptureFormats = false;
+            }
+        }
+
+        partial void OnSelectedCaptureFormatChanged(CaptureFormatOption? oldValue, CaptureFormatOption? newValue)
+        {
+            // The ComboBox briefly reports null while its items are being replaced
+            if (_isPopulatingCaptureFormats || newValue == null)
+                return;
+            if (oldValue?.Format == newValue.Format)
+                return;
+
+            _cameraSourceFactory.SetRequestedFormat(DisplayAddress, newValue.Format);
+            SaveCaptureFormat(newValue.Format);
+
+            // Pixel based crop regions don't carry over to a different resolution.
+            // An empty region makes the pipeline use the whole frame until the user crops again.
+            if (oldValue?.Format is not { } oldFormat || newValue.Format is not { } newFormat ||
+                oldFormat.Width != newFormat.Width || oldFormat.Height != newFormat.Height)
+            {
+                CropManager.SetCropZone(new RegionOfInterest(0, 0, 0, 0));
+                OnCropUpdated();
+            }
+
+            CaptureFormatChangedByUser?.Invoke(this);
+        }
+
+        private void SaveCaptureFormat(CaptureFormat? format)
+        {
+            if (format == null)
+                _localSettingsService.SaveSetting<SavedCaptureFormat?>("CaptureFormat" + Name, null);
+            else
+                _localSettingsService.SaveSetting("CaptureFormat" + Name, new SavedCaptureFormat(DisplayAddress, format));
         }
 
         partial void OnSelectedCaptureMethodChanged(string value)
@@ -159,6 +298,7 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
         {
             var friendlyNames = _deviceEnumerator.UpdateCameras().Keys.ToArray();
             UpdateCameraDropDown(friendlyNames);
+            RefreshCaptureFormats(force: true);
         }
 
         public void UpdateCameraDropDown(string[] cameras)
@@ -404,6 +544,7 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
     private readonly ILocalSettingsService _localSettings;
     private readonly ILogger<HomePageViewModel> _logger;
     private readonly IPlatformConnector _platformConnector;
+    private readonly SingleCameraSourceFactory _cameraSourceFactory;
 
     public CalibrationRoutine.Routines RequestedVRCalibration = CalibrationRoutine.Map["BasicCalibration"];
 
@@ -416,8 +557,10 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
         ILocalSettingsService localSettings,
         ILogger<HomePageViewModel> logger,
         DropOverlayService dropOverlayService,
-        IPlatformConnector platformConnector)
+        IPlatformConnector platformConnector,
+        SingleCameraSourceFactory cameraSourceFactory)
     {
+        _cameraSourceFactory = cameraSourceFactory;
         _facePipelineManager = facePipelineManager;
         _eyePipelineManager = eyePipelineManager;
         _facePipelineEventBus = facePipelineEventBus;
@@ -448,12 +591,16 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
         var cameras = _deviceEnumerator.UpdateCameras();
         var cameraNames = cameras.Keys.ToArray();
 
-        LeftCamera = new CameraControllerModel(_localSettings, _platformConnector, _deviceEnumerator, "LeftCamera",
-            cameraNames, Camera.Left);
-        RightCamera = new CameraControllerModel(_localSettings, _platformConnector, _deviceEnumerator, "RightCamera",
-            cameraNames, Camera.Right);
-        FaceCamera = new CameraControllerModel(_localSettings, _platformConnector, _deviceEnumerator, "FaceCamera",
-            cameraNames, Camera.Face);
+        LeftCamera = new CameraControllerModel(_localSettings, _platformConnector, _deviceEnumerator,
+            _cameraSourceFactory, "LeftCamera", cameraNames, Camera.Left);
+        RightCamera = new CameraControllerModel(_localSettings, _platformConnector, _deviceEnumerator,
+            _cameraSourceFactory, "RightCamera", cameraNames, Camera.Right);
+        FaceCamera = new CameraControllerModel(_localSettings, _platformConnector, _deviceEnumerator,
+            _cameraSourceFactory, "FaceCamera", cameraNames, Camera.Face);
+
+        FaceCamera.CaptureFormatChangedByUser += OnCaptureFormatChangedByUser;
+        LeftCamera.CaptureFormatChangedByUser += OnCaptureFormatChangedByUser;
+        RightCamera.CaptureFormatChangedByUser += OnCaptureFormatChangedByUser;
 
         FaceCamera.PropertyChanged += CameraControllerModel_PropertyChanged;
         LeftCamera.PropertyChanged += CameraControllerModel_PropertyChanged;
@@ -481,6 +628,35 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
         IsInitialized = true;
 
         _ = TryStartCamerasAsync();
+    }
+
+    private async void OnCaptureFormatChangedByUser(CameraControllerModel model)
+    {
+        try
+        {
+            var address = model.DisplayAddress;
+            var format = model.SelectedCaptureFormat?.Format;
+            CameraControllerModel[] all = [FaceCamera, LeftCamera, RightCamera];
+
+            // Panels pointing at the same device (e.g. one stereo camera for both eyes) share the mode
+            foreach (var other in all.Where(m => m != model && m.DisplayAddress == address))
+                other.SyncCaptureFormat(format);
+
+            // Restart running captures of this device so the new mode takes effect
+            var running = all.Where(m => m.IsCameraRunning && m.DisplayAddress == address).ToList();
+            if (running.Count == 0)
+                return;
+
+            foreach (var m in running.Where(m => m.IsCameraRunning))
+                StopCamera(m);
+
+            foreach (var m in running)
+                await StartCameraWithMaximization(m, startMaximized: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to apply camera mode change");
+        }
     }
 
     private void CameraControllerModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -774,5 +950,9 @@ public partial class HomePageViewModel : ViewModelBase, IDisposable
 
         _facePipelineEventBus.Unsubscribe<FacePipelineEvents.ExceptionEvent>(FacePipelineExceptionHandler);
         _eyePipelineEventBus.Unsubscribe<EyePipelineEvents.ExceptionEvent>(EyePipelineExceptionHandler);
+
+        FaceCamera.CaptureFormatChangedByUser -= OnCaptureFormatChangedByUser;
+        LeftCamera.CaptureFormatChangedByUser -= OnCaptureFormatChangedByUser;
+        RightCamera.CaptureFormatChangedByUser -= OnCaptureFormatChangedByUser;
     }
 }
